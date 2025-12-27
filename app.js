@@ -1417,7 +1417,52 @@ function boot() {
 
   render();
 }
+// ===============================
+// BACKUP / RESTORE
+// ===============================
 
+function exportBackup() {
+  const data = {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    state,
+  };
+
+  const blob = new Blob(
+    [JSON.stringify(data, null, 2)],
+    { type: "application/json" }
+  );
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `kingsturnier-backup-${Date.now()}.json`;
+  a.click();
+}
+
+function importBackup(file) {
+  const reader = new FileReader();
+
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+
+      if (!data.state) {
+        alert("Ungültiges Backup");
+        return;
+      }
+
+      state = data.state;   // 🔥 jetzt möglich
+      persist();
+      render();
+
+      alert("Backup erfolgreich geladen");
+    } catch (e) {
+      alert("Fehler beim Laden des Backups");
+    }
+  };
+
+  reader.readAsText(file);
+}
 boot();
 
 // debug
