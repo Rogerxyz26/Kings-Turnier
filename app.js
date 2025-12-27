@@ -62,7 +62,7 @@ function fmtMs(ms) {
   return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
 }
 
-const state = {
+let state = {
   view: "Turnier",
   players: load(LS.players, []),
   tournament: load(LS.tournament, null),
