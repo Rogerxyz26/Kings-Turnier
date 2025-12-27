@@ -1129,13 +1129,39 @@ function renderTurnierCenter() {
       el("button", { class: "btn", onclick: newTournamentReset }, [
         "Neues Turnier (Reset)",
       ]),
-      el(
+            el(
         "button",
         { class: "btn primary", onclick: finalizeAndSaveTournament },
         ["Turnier abschließen & speichern"],
       ),
     ]),
   );
+// Backup Controls
+card.appendChild(
+  el("div", { class: "itemBtnRow" }, [
+    el(
+      "button",
+      {
+        class: "btn",
+        onclick: exportBackup,
+      },
+      ["Backup exportieren"]
+    ),
+    el("label", { class: "btn" }, [
+      "Backup importieren",
+      el("input", {
+        type: "file",
+        accept: "application/json",
+        style: "display:none",
+        onchange: (e) => {
+          const f = e.target.files && e.target.files[0];
+          if (f) importBackup(f);
+          e.target.value = "";
+        },
+      }),
+    ]),
+  ])
+);
 
   card.appendChild(el("div", { class: "hr" }));
 
