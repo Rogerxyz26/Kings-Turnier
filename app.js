@@ -625,12 +625,14 @@ function chooseWinner(tableId, winnerId) {
   ensureStatsFor(winnerId);
   ensureStatsFor(loserId);
 
+  // Stats
   state.tournament.statsById[winnerId].wins += 1;
   state.tournament.statsById[winnerId].games += 1;
 
   state.tournament.statsById[loserId].losses += 1;
   state.tournament.statsById[loserId].games += 1;
 
+  // Match ins Log
   state.tournament.matches.unshift({
     id: uid("m"),
     at: now(),
@@ -643,95 +645,52 @@ function chooseWinner(tableId, winnerId) {
     durationMs: dur,
   });
 
-  // beide zurück in Warteliste, falls aktiv
-  const w = state.players.find((p) => p.id === winnerId);
-  const l = state.players.find((p) => p.id === loserId);
-  tb.match = null;
+  // --- NEU: Sieger bleibt am Tisch, Verlierer raus, erster aus Warteliste rein ---
 
-  if (w && w.active) state.tournament.waitlist.push(winnerId);
-  if (l && l.active) state.tournament.waitlist.push(loserId);
+  // Warteliste zuerst sauber machen (Sicherheitsnetz)
+  syncWaitlist();
 
+  // Falls winner/loser aus irgendeinem Grund in der Warteliste hängen: raus damit
+  state.tournament.waitlist = (state.tournament.waitlist || []).filter(
+    (id) => id !== winnerId && id !== loserId,
+  );
+
+  // 1. aus Warteliste holen als neuen Gegner
+  const nextId = (state.tournament.waitlist || []).shift() || null;
+
+  // Verlierer ans Ende der Warteliste (wenn aktiv)
+  const loser = state.players.find((p) => p.id === loserId);
+  if (loser && loser.active) state.tournament.waitlist.push(loserId);
+
+  // Tisch sofort neu besetzen: Sieger bleibt
+  if (nextId) {
+    tb.match = {
+      tableId: tb.id,
+      phase: state.tournament.phase,
+      aId: winnerId,
+      bId: nextId,
+      status: "idle",     // bereit für "Spiel starten"
+      startAt: null,
+      awaitAt: null,
+    };
+    ensureStatsFor(nextId);
+  } else {
+    // niemand wartet -> Tisch wird frei.
+    // Optional: Sieger nach vorne in Warteliste, damit er "als erster" wieder drankommt
+    const winner = state.players.find((p) => p.id === winnerId);
+    if (winner && winner.active) state.tournament.waitlist.unshift(winnerId);
+
+    tb.match = null;
+  }
+
+  // andere Tische dürfen weiter automatisch gefüllt werden
   syncWaitlist();
   autoFillTables();
+
   persist();
   render();
 }
 
-/* ---------------------- Profile / Modal ---------------------- */
-
-function openPlayerProfile(playerId) {
-  ensureTournament();
-  const name = nameOf(playerId);
-  const stats = state.tournament.statsById[playerId] || {
-    wins: 0,
-    losses: 0,
-    games: 0,
-  };
-  const games = stats.games || stats.wins + stats.losses;
-  const quote = games ? Math.round((stats.wins / games) * 100) : 0;
-
-  const recent = state.tournament.matches
-    .filter((m) => m.aId === playerId || m.bId === playerId)
-    .slice(0, 30);
-
-  const back = el("div", {
-    class: "modalBack",
-    onclick: (e) => {
-      if (e.target === back) closeModal();
-    },
-  });
-  const modal = el("div", { class: "modal" });
-
-  modal.appendChild(el("h3", {}, [`Spielerprofil: ${name}`]));
-  modal.appendChild(
-    el("div", { class: "small" }, [
-      `Aktuelles Turnier: Quote ${quote}% • ${stats.wins}-${stats.losses} • ${games} Spiele`,
-    ]),
-  );
-  modal.appendChild(el("div", { class: "hr" }));
-
-  if (!recent.length) {
-    modal.appendChild(
-      el("div", { class: "small" }, [
-        "Noch keine Spiele im aktuellen Turnier.",
-      ]),
-    );
-  } else {
-    const list = el("div", { class: "list" });
-    recent.forEach((m) => {
-      const isWin = m.winnerId === playerId;
-      const other = m.aId === playerId ? m.bId : m.aId;
-      const t = new Date(m.at).toLocaleString("de-AT");
-      list.appendChild(
-        el("div", { class: "item" }, [
-          el("div", { style: "font-weight:900" }, [
-            isWin
-              ? `✅ Sieg vs ${nameOf(other)}`
-              : `❌ Niederlage vs ${nameOf(other)}`,
-          ]),
-          el("div", { class: "small mono" }, [
-            `${t} • ${m.phase} • ${m.tableLabel} • ${fmtMs(m.durationMs)}`,
-          ]),
-        ]),
-      );
-    });
-    modal.appendChild(list);
-  }
-
-  modal.appendChild(el("div", { class: "hr" }));
-  modal.appendChild(
-    el("button", { class: "btn primary", onclick: closeModal }, ["Schließen"]),
-  );
-
-  back.appendChild(modal);
-  state.modal = back;
-  render();
-}
-
-function closeModal() {
-  state.modal = null;
-  render();
-}
 
 /* ---------------------- Archive ---------------------- */
 
