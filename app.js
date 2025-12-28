@@ -615,7 +615,6 @@ function chooseWinner(tableId, winnerId) {
   const tb = state.tournament.tables.find((x) => x.id === tableId);
   if (!tb || !tb.match) return;
   const m = tb.match;
-
   if (m.status !== "await_winner") return;
 
   const loserId = m.aId === winnerId ? m.bId : m.aId;
@@ -623,14 +622,16 @@ function chooseWinner(tableId, winnerId) {
 
   ensureTournament();
   ensureStatsFor(winnerId);
-  ensureStatsFor(loserId);
+  if (loserId) ensureStatsFor(loserId);
 
   // Stats
   state.tournament.statsById[winnerId].wins += 1;
   state.tournament.statsById[winnerId].games += 1;
 
-  state.tournament.statsById[loserId].losses += 1;
-  state.tournament.statsById[loserId].games += 1;
+  if (loserId) {
+    state.tournament.statsById[loserId].losses += 1;
+    state.tournament.statsById[loserId].games += 1;
+  }
 
   // Match ins Log
   state.tournament.matches.unshift({
@@ -645,82 +646,39 @@ function chooseWinner(tableId, winnerId) {
     durationMs: dur,
   });
 
-  // --- NEU: Sieger bleibt am Tisch, Verlierer raus, erster aus Warteliste rein ---
-
-  // Warteliste zuerst sauber machen (Sicherheitsnetz)
+  // --- King-of-the-table Logik ---
+  // Sieger bleibt links (aId). Verlierer hinten an Warteliste.
   syncWaitlist();
 
-  // Falls winner/loser aus irgendeinem Grund in der Warteliste hängen: raus damit
+  // Entferne ggf. doppelte Einträge
   state.tournament.waitlist = (state.tournament.waitlist || []).filter(
-    (id) => id !== winnerId && id !== loserId,
+    (id) => id !== winnerId && id !== loserId
   );
 
-  // 1. aus Warteliste holen als neuen Gegner
+  // Verlierer ans Ende (wenn aktiv)
+  const loser = loserId ? state.players.find((p) => p.id === loserId) : null;
+  if (loserId && loser && loser.active) state.tournament.waitlist.push(loserId);
+
+  // Neuer Gegner = erster von Warteliste (wenn vorhanden)
   const nextId = (state.tournament.waitlist || []).shift() || null;
 
-  // Verlierer ans Ende der Warteliste (wenn aktiv)
-  const loser = state.players.find((p) => p.id === loserId);
-  if (loser && loser.active) state.tournament.waitlist.push(loserId);
+  // Tisch bleibt bestehen: Sieger links, rechts entweder nextId oder leer (wartet)
+  tb.match = {
+    tableId: tb.id,
+    phase: state.tournament.phase,
+    aId: winnerId,          // Sieger IMMER links
+    bId: nextId,            // kann null sein -> wartet
+    status: "idle",
+    startAt: null,
+    awaitAt: null,
+  };
 
-  // Tisch sofort neu besetzen: Sieger bleibt
-  if (nextId) {
-    tb.match = {
-      tableId: tb.id,
-      phase: state.tournament.phase,
-      aId: winnerId,
-      bId: nextId,
-      status: "idle",     // bereit für "Spiel starten"
-      startAt: null,
-      awaitAt: null,
-    };
-    ensureStatsFor(nextId);
-  } else {
-    // niemand wartet -> Tisch wird frei.
-    // Optional: Sieger nach vorne in Warteliste, damit er "als erster" wieder drankommt
-    const winner = state.players.find((p) => p.id === winnerId);
-    if (winner && winner.active) state.tournament.waitlist.unshift(winnerId);
+  if (nextId) ensureStatsFor(nextId);
 
-    tb.match = null;
-  }
-
-  // andere Tische dürfen weiter automatisch gefüllt werden
+  // andere Tische auffüllen
   syncWaitlist();
   autoFillTables();
 
-  persist();
-  render();
-}
-
-
-/* ---------------------- Archive ---------------------- */
-
-function toggleArchiveIncluded(id, included) {
-  const t = state.archive.tournaments.find((x) => x.id === id);
-  if (!t) return;
-  t.includedInOverall = !!included;
-  state.archive.lifetimeById = recomputeLifetime();
-  persist();
-  render();
-}
-
-function deleteTournament(id) {
-  if (!confirm("Turnier wirklich löschen?")) return;
-  state.archive.tournaments = state.archive.tournaments.filter(
-    (t) => t.id !== id,
-  );
-  state.archive.lifetimeById = recomputeLifetime();
-  persist();
-  render();
-}
-
-function renameTournament(id) {
-  const t = state.archive.tournaments.find((x) => x.id === id);
-  if (!t) return;
-  const neu = prompt("Neuer Turniername:", t.name || "");
-  if (neu === null) return;
-  const name = neu.trim();
-  if (!name) return;
-  t.name = name;
   persist();
   render();
 }
